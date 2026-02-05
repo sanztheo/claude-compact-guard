@@ -16,7 +16,6 @@ readonly GUARD_MARKER_END="<!-- CLAUDE-COMPACT-GUARD:END -->"
 
 # --- Colors ---
 
-readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[0;33m'
 readonly BOLD='\033[1m'

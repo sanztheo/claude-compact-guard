@@ -14,7 +14,6 @@ readonly CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
 readonly BIN_DIR="${HOME}/.local/bin"
 
 readonly GUARD_MARKER_START="<!-- CLAUDE-COMPACT-GUARD:START -->"
-readonly GUARD_MARKER_END="<!-- CLAUDE-COMPACT-GUARD:END -->"
 
 readonly REPO_URL="https://raw.githubusercontent.com/sanztheo/claude-compact-guard/main"
 
@@ -100,28 +99,6 @@ install_cli() {
 
 merge_settings() {
     info "Configuring Claude Code hooks..."
-
-    local hook_config_pre_compact
-    hook_config_pre_compact=$(cat <<'HOOKJSON'
-{
-    "type": "command",
-    "event": "PreCompact",
-    "command": "~/.claude/hooks/pre-compact.sh",
-    "timeout": 10000
-}
-HOOKJSON
-)
-
-    local hook_config_session_start
-    hook_config_session_start=$(cat <<'HOOKJSON'
-{
-    "type": "command",
-    "event": "SessionStart",
-    "command": "~/.claude/hooks/session-start.sh",
-    "timeout": 5000
-}
-HOOKJSON
-)
 
     if [[ ! -f "${SETTINGS_FILE}" ]]; then
         # Create fresh settings
