@@ -1,69 +1,105 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Session-start hook: detects if session started right after a compaction
-# If compaction was recent (< 60s), writes a marker file for Claude to pick up
+# Session-start hook: injects saved context directly into Claude after compaction
+# Uses SessionStart's additionalContext — guaranteed injection, no marker files needed
 
 readonly GUARD_DIR="${HOME}/.claude/compact-guard"
-readonly STATE_FILE="${GUARD_DIR}/state.json"
-readonly MARKER_FILE="${GUARD_DIR}/.just-compacted"
-readonly COMPACTION_WINDOW_SECONDS=60
+readonly BACKUPS_DIR="${GUARD_DIR}/backups"
+readonly TASK_FILE="${GUARD_DIR}/current-task.md"
 
 # --- Helpers ---
 
-get_last_compaction_epoch() {
-    local last_compaction=""
-
-    if [[ ! -f "${STATE_FILE}" ]]; then
-        echo "0"
-        return
-    fi
+read_stdin_json_field() {
+    local field="$1"
+    local input="$2"
 
     if command -v jq &>/dev/null; then
-        last_compaction=$(jq -r '.last_compaction // ""' "${STATE_FILE}" 2>/dev/null) || last_compaction=""
+        echo "${input}" | jq -r ".${field} // \"\"" 2>/dev/null || echo ""
     elif command -v python3 &>/dev/null; then
-        last_compaction=$(python3 -c "import json; print(json.load(open('${STATE_FILE}')).get('last_compaction',''))" 2>/dev/null) || last_compaction=""
+        echo "${input}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('${field}',''))" 2>/dev/null || echo ""
     else
-        last_compaction=$(grep -o '"last_compaction"[[:space:]]*:[[:space:]]*"[^"]*"' "${STATE_FILE}" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"') || last_compaction=""
+        echo ""
     fi
+}
 
-    if [[ -z "${last_compaction}" || "${last_compaction}" == "null" ]]; then
-        echo "0"
+get_latest_backup() {
+    if [[ ! -d "${BACKUPS_DIR}" ]]; then
         return
     fi
-
-    # Convert ISO timestamp to epoch
-    if command -v python3 &>/dev/null; then
-        python3 -c "
-from datetime import datetime
-try:
-    dt = datetime.fromisoformat('${last_compaction}')
-    print(int(dt.timestamp()))
-except:
-    print(0)
-" 2>/dev/null || echo "0"
-    elif date --version &>/dev/null 2>&1; then
-        # GNU date
-        date -d "${last_compaction}" "+%s" 2>/dev/null || echo "0"
-    else
-        # macOS date
-        date -j -f "%Y-%m-%dT%H:%M:%S" "${last_compaction}" "+%s" 2>/dev/null || echo "0"
-    fi
+    find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -n 1
 }
 
 # --- Main ---
 
 main() {
-    local last_epoch
-    last_epoch=$(get_last_compaction_epoch)
+    # Read stdin JSON from Claude Code
+    local stdin_data=""
+    if [[ ! -t 0 ]]; then
+        stdin_data=$(cat)
+    fi
 
-    local now_epoch
-    now_epoch=$(date "+%s")
+    local source=""
+    if [[ -n "${stdin_data}" ]]; then
+        source=$(read_stdin_json_field "source" "${stdin_data}")
+    fi
 
-    local diff=$((now_epoch - last_epoch))
+    # Only inject context after compaction
+    if [[ "${source}" != "compact" ]]; then
+        exit 0
+    fi
 
-    if [[ "${diff}" -le "${COMPACTION_WINDOW_SECONDS}" && "${last_epoch}" -gt 0 ]]; then
-        touch "${MARKER_FILE}"
+    # Build context to inject
+    local context=""
+
+    # Read current-task.md (written by pre-compact hook from transcript)
+    if [[ -f "${TASK_FILE}" ]]; then
+        local task_content
+        task_content=$(cat "${TASK_FILE}")
+        if [[ -n "${task_content}" && "${task_content}" != *"(not set)"* ]]; then
+            context="[COMPACTION RECOVERY] The conversation was just compacted. Here is the context from before compaction:
+
+${task_content}"
+        fi
+    fi
+
+    # If no task file, try the latest backup
+    if [[ -z "${context}" ]]; then
+        local latest_backup
+        latest_backup=$(get_latest_backup)
+        if [[ -n "${latest_backup}" ]]; then
+            local backup_content
+            backup_content=$(cat "${latest_backup}")
+            context="[COMPACTION RECOVERY] The conversation was just compacted. Here is the saved backup:
+
+${backup_content}"
+        fi
+    fi
+
+    # If we have context, output JSON with additionalContext
+    if [[ -n "${context}" ]]; then
+        if command -v jq &>/dev/null; then
+            jq -n --arg ctx "${context}" '{
+                hookSpecificOutput: {
+                    hookEventName: "SessionStart",
+                    additionalContext: $ctx
+                }
+            }'
+        elif command -v python3 &>/dev/null; then
+            python3 -c "
+import json
+ctx = '''${context}'''
+print(json.dumps({
+    'hookSpecificOutput': {
+        'hookEventName': 'SessionStart',
+        'additionalContext': ctx
+    }
+}))
+"
+        else
+            # Plain text fallback — stdout is also added as context for SessionStart
+            echo "${context}"
+        fi
     fi
 }
 
