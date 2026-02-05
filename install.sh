@@ -107,16 +107,26 @@ merge_settings() {
   "hooks": {
     "PreCompact": [
       {
-        "type": "command",
-        "command": "~/.claude/hooks/pre-compact.sh",
-        "timeout": 10000
+        "matcher": {},
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre-compact.sh",
+            "timeout": 10000
+          }
+        ]
       }
     ],
     "SessionStart": [
       {
-        "type": "command",
-        "command": "~/.claude/hooks/session-start.sh",
-        "timeout": 5000
+        "matcher": {},
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-start.sh",
+            "timeout": 5000
+          }
+        ]
       }
     ]
   }
@@ -143,11 +153,11 @@ merge_settings_jq() {
     .hooks //= {} |
     .hooks.PreCompact //= [] |
     .hooks.SessionStart //= [] |
-    (if (.hooks.PreCompact | map(select(.command == "~/.claude/hooks/pre-compact.sh")) | length) == 0
-     then .hooks.PreCompact += [{"type": "command", "command": "~/.claude/hooks/pre-compact.sh", "timeout": 10000}]
+    (if (.hooks.PreCompact | map(select(.hooks[]?.command == "~/.claude/hooks/pre-compact.sh")) | length) == 0
+     then .hooks.PreCompact += [{"matcher": {}, "hooks": [{"type": "command", "command": "~/.claude/hooks/pre-compact.sh", "timeout": 10000}]}]
      else . end) |
-    (if (.hooks.SessionStart | map(select(.command == "~/.claude/hooks/session-start.sh")) | length) == 0
-     then .hooks.SessionStart += [{"type": "command", "command": "~/.claude/hooks/session-start.sh", "timeout": 5000}]
+    (if (.hooks.SessionStart | map(select(.hooks[]?.command == "~/.claude/hooks/session-start.sh")) | length) == 0
+     then .hooks.SessionStart += [{"matcher": {}, "hooks": [{"type": "command", "command": "~/.claude/hooks/session-start.sh", "timeout": 5000}]}]
      else . end)
     ' "${SETTINGS_FILE}" > "${tmp}" && mv "${tmp}" "${SETTINGS_FILE}"
 
@@ -167,13 +177,21 @@ hooks = settings.setdefault('hooks', {})
 pre_compact = hooks.setdefault('PreCompact', [])
 session_start = hooks.setdefault('SessionStart', [])
 
-pre_exists = any(h.get('command') == '~/.claude/hooks/pre-compact.sh' for h in pre_compact)
+pre_exists = any(
+    h.get('command') == '~/.claude/hooks/pre-compact.sh'
+    for entry in pre_compact
+    for h in entry.get('hooks', [])
+)
 if not pre_exists:
-    pre_compact.append({'type': 'command', 'command': '~/.claude/hooks/pre-compact.sh', 'timeout': 10000})
+    pre_compact.append({'matcher': {}, 'hooks': [{'type': 'command', 'command': '~/.claude/hooks/pre-compact.sh', 'timeout': 10000}]})
 
-ss_exists = any(h.get('command') == '~/.claude/hooks/session-start.sh' for h in session_start)
+ss_exists = any(
+    h.get('command') == '~/.claude/hooks/session-start.sh'
+    for entry in session_start
+    for h in entry.get('hooks', [])
+)
 if not ss_exists:
-    session_start.append({'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 5000})
+    session_start.append({'matcher': {}, 'hooks': [{'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 5000}]})
 
 with open('${tmp}', 'w') as f:
     json.dump(settings, f, indent=2)

@@ -61,9 +61,9 @@ remove_settings_hooks() {
         jq '
         if .hooks then
             .hooks.PreCompact //= [] |
-            .hooks.PreCompact = [.hooks.PreCompact[] | select(.command != "~/.claude/hooks/pre-compact.sh")] |
+            .hooks.PreCompact = [.hooks.PreCompact[] | select((.hooks // []) | all(.command != "~/.claude/hooks/pre-compact.sh"))] |
             .hooks.SessionStart //= [] |
-            .hooks.SessionStart = [.hooks.SessionStart[] | select(.command != "~/.claude/hooks/session-start.sh")] |
+            .hooks.SessionStart = [.hooks.SessionStart[] | select((.hooks // []) | all(.command != "~/.claude/hooks/session-start.sh"))] |
             if (.hooks.PreCompact | length) == 0 then del(.hooks.PreCompact) else . end |
             if (.hooks.SessionStart | length) == 0 then del(.hooks.SessionStart) else . end |
             if (.hooks | keys | length) == 0 then del(.hooks) else . end
@@ -81,12 +81,18 @@ with open('${SETTINGS_FILE}') as f:
 hooks = settings.get('hooks', {})
 
 if 'PreCompact' in hooks:
-    hooks['PreCompact'] = [h for h in hooks['PreCompact'] if h.get('command') != '~/.claude/hooks/pre-compact.sh']
+    hooks['PreCompact'] = [
+        entry for entry in hooks['PreCompact']
+        if not any(h.get('command') == '~/.claude/hooks/pre-compact.sh' for h in entry.get('hooks', []))
+    ]
     if not hooks['PreCompact']:
         del hooks['PreCompact']
 
 if 'SessionStart' in hooks:
-    hooks['SessionStart'] = [h for h in hooks['SessionStart'] if h.get('command') != '~/.claude/hooks/session-start.sh']
+    hooks['SessionStart'] = [
+        entry for entry in hooks['SessionStart']
+        if not any(h.get('command') == '~/.claude/hooks/session-start.sh' for h in entry.get('hooks', []))
+    ]
     if not hooks['SessionStart']:
         del hooks['SessionStart']
 
