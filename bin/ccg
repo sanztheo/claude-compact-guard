@@ -1,0 +1,441 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ccg - Claude Compact Guard CLI
+# Manage context backups and task tracking for Claude Code
+
+readonly VERSION="1.0.0"
+readonly GUARD_DIR="${HOME}/.claude/compact-guard"
+readonly BACKUPS_DIR="${GUARD_DIR}/backups"
+readonly TASK_FILE="${GUARD_DIR}/current-task.md"
+readonly STATE_FILE="${GUARD_DIR}/state.json"
+readonly CONFIG_FILE="${GUARD_DIR}/config.json"
+readonly HOOKS_DIR="${HOME}/.claude/hooks"
+
+# --- Colors ---
+
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[0;33m'
+readonly BLUE='\033[0;34m'
+readonly BOLD='\033[1m'
+readonly DIM='\033[2m'
+readonly RESET='\033[0m'
+
+# --- JSON Helpers ---
+
+json_read() {
+    local file="$1"
+    local field="$2"
+    local default="${3:-}"
+
+    if [[ ! -f "${file}" ]]; then
+        echo "${default}"
+        return
+    fi
+
+    local value=""
+    if command -v jq &>/dev/null; then
+        value=$(jq -r ".${field} // \"\"" "${file}" 2>/dev/null) || value=""
+    elif command -v python3 &>/dev/null; then
+        value=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('${file}'))
+    keys = '${field}'.split('.')
+    v = d
+    for k in keys:
+        v = v.get(k, '')
+    print(v if v is not None else '')
+except:
+    print('')
+" 2>/dev/null) || value=""
+    fi
+
+    if [[ -z "${value}" || "${value}" == "null" ]]; then
+        echo "${default}"
+    else
+        echo "${value}"
+    fi
+}
+
+json_write() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    local tmp="${file}.tmp.$$"
+
+    if command -v jq &>/dev/null; then
+        if [[ "${value}" =~ ^[0-9]+$ ]]; then
+            jq ".${key} = ${value}" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
+        elif [[ "${value}" == "true" || "${value}" == "false" ]]; then
+            jq ".${key} = ${value}" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
+        else
+            jq ".${key} = \"${value}\"" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
+        fi
+    elif command -v python3 &>/dev/null; then
+        python3 -c "
+import json
+with open('${file}') as f:
+    d = json.load(f)
+val = '${value}'
+if val.isdigit():
+    val = int(val)
+elif val in ('true','false'):
+    val = val == 'true'
+d['${key}'] = val
+with open('${tmp}', 'w') as f:
+    json.dump(d, f, indent=2)
+" 2>/dev/null && mv "${tmp}" "${file}"
+    else
+        echo -e "${RED}Error: jq or python3 required to update config${RESET}" >&2
+        return 1
+    fi
+}
+
+# --- Helpers ---
+
+time_ago() {
+    local timestamp="$1"
+    if [[ -z "${timestamp}" || "${timestamp}" == "null" ]]; then
+        echo "never"
+        return
+    fi
+
+    local epoch=0
+    if command -v python3 &>/dev/null; then
+        epoch=$(python3 -c "
+from datetime import datetime
+try:
+    dt = datetime.fromisoformat('${timestamp}')
+    print(int(dt.timestamp()))
+except:
+    print(0)
+" 2>/dev/null) || epoch=0
+    elif date --version &>/dev/null 2>&1; then
+        epoch=$(date -d "${timestamp}" "+%s" 2>/dev/null) || epoch=0
+    else
+        epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${timestamp}" "+%s" 2>/dev/null) || epoch=0
+    fi
+
+    if [[ "${epoch}" -eq 0 ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local now
+    now=$(date "+%s")
+    local diff=$((now - epoch))
+
+    if [[ "${diff}" -lt 60 ]]; then
+        echo "${diff}s ago"
+    elif [[ "${diff}" -lt 3600 ]]; then
+        echo "$((diff / 60))m ago"
+    elif [[ "${diff}" -lt 86400 ]]; then
+        echo "$((diff / 3600))h ago"
+    else
+        echo "$((diff / 86400))d ago"
+    fi
+}
+
+check_hook() {
+    local hook_name="$1"
+    local hook_path="${HOOKS_DIR}/${hook_name}.sh"
+
+    if [[ -f "${hook_path}" && -x "${hook_path}" ]]; then
+        echo -e "${GREEN}[OK]${RESET}"
+    elif [[ -f "${hook_path}" ]]; then
+        echo -e "${YELLOW}[NOT EXEC]${RESET}"
+    else
+        echo -e "${RED}[MISSING]${RESET}"
+    fi
+}
+
+get_task_summary() {
+    if [[ ! -f "${TASK_FILE}" ]]; then
+        echo "(not set)"
+        return
+    fi
+
+    local objective
+    objective=$(grep -m1 "^Objective:" "${TASK_FILE}" 2>/dev/null | sed 's/^Objective:[[:space:]]*//' | head -c 60) || objective=""
+
+    if [[ -z "${objective}" || "${objective}" == "(not set)" ]]; then
+        echo "(not set)"
+    else
+        echo "\"${objective}\""
+    fi
+}
+
+# --- Commands ---
+
+cmd_status() {
+    echo -e "${BOLD}claude-compact-guard v${VERSION}${RESET}"
+    echo "==========================="
+
+    local last_compaction
+    last_compaction=$(json_read "${STATE_FILE}" "last_compaction" "")
+    local last_type
+    last_type=$(json_read "${STATE_FILE}" "last_compaction_type" "")
+    local total
+    total=$(json_read "${STATE_FILE}" "total_compactions" "0")
+    local max_backups
+    max_backups=$(json_read "${CONFIG_FILE}" "max_backups" "10")
+
+    local backup_count=0
+    if [[ -d "${BACKUPS_DIR}" ]]; then
+        backup_count=$(find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+    fi
+
+    local time_str
+    time_str=$(time_ago "${last_compaction}")
+
+    local compaction_display="never"
+    if [[ -n "${last_compaction}" && "${last_compaction}" != "null" ]]; then
+        local display_date
+        display_date=$(echo "${last_compaction}" | sed 's/T/ /' | cut -c1-16)
+        compaction_display="${display_date} (${last_type}) - ${time_str}"
+    fi
+
+    echo -e "Last compaction:  ${compaction_display}"
+    echo -e "Total compactions: ${total}"
+    echo -e "Backups stored:   ${backup_count}/${max_backups}"
+    echo -e "Current task:     $(get_task_summary)"
+    echo -e "Hooks:            pre-compact $(check_hook "pre-compact")  session-start $(check_hook "session-start")"
+}
+
+cmd_task() {
+    if [[ ! -f "${TASK_FILE}" ]]; then
+        echo -e "${DIM}No task file found. Run 'ccg task set' to create one.${RESET}"
+        return
+    fi
+    cat "${TASK_FILE}"
+}
+
+cmd_task_set() {
+    mkdir -p "${GUARD_DIR}"
+
+    if [[ ! -t 0 ]]; then
+        # Reading from stdin/pipe
+        cat > "${TASK_FILE}"
+        echo -e "${GREEN}Task updated from stdin.${RESET}"
+    elif [[ -n "${EDITOR:-}" ]]; then
+        if [[ ! -f "${TASK_FILE}" ]]; then
+            cp "${GUARD_DIR}/../../compact-guard/templates/current-task.md" "${TASK_FILE}" 2>/dev/null || cat > "${TASK_FILE}" <<'TMPL'
+# Current Task
+
+Objective: (not set)
+Key files: (none)
+Decisions made: (none)
+Last action: (none)
+Next step: (none)
+
+---
+Updated: (never)
+TMPL
+        fi
+        "${EDITOR}" "${TASK_FILE}"
+        echo -e "${GREEN}Task updated.${RESET}"
+    else
+        echo -e "${YELLOW}No \$EDITOR set and no stdin pipe detected.${RESET}"
+        echo "Usage: echo 'my task' | ccg task set"
+        echo "   or: EDITOR=nano ccg task set"
+        return 1
+    fi
+}
+
+cmd_task_clear() {
+    cat > "${TASK_FILE}" <<'EOF'
+# Current Task
+
+Objective: (not set)
+Key files: (none)
+Decisions made: (none)
+Last action: (none)
+Next step: (none)
+
+---
+Updated: (never)
+EOF
+    echo -e "${GREEN}Task cleared to template.${RESET}"
+}
+
+cmd_backups() {
+    if [[ ! -d "${BACKUPS_DIR}" ]]; then
+        echo -e "${DIM}No backups directory found.${RESET}"
+        return
+    fi
+
+    local files
+    files=$(find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r)
+
+    if [[ -z "${files}" ]]; then
+        echo -e "${DIM}No backups found.${RESET}"
+        return
+    fi
+
+    echo -e "${BOLD}Backups:${RESET}"
+    local i=1
+    while IFS= read -r file; do
+        local name
+        name=$(basename "${file}" .md)
+        local display_date
+        display_date=$(echo "${name}" | sed 's/_/ /' | sed 's/-/:/3' | sed 's/-/:/3')
+        echo -e "  ${DIM}${i}.${RESET} ${display_date}"
+        i=$((i + 1))
+    done <<< "${files}"
+}
+
+cmd_backups_show() {
+    if [[ ! -d "${BACKUPS_DIR}" ]]; then
+        echo -e "${DIM}No backups directory found.${RESET}"
+        return
+    fi
+
+    local latest
+    latest=$(find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -n 1)
+
+    if [[ -z "${latest}" ]]; then
+        echo -e "${DIM}No backups found.${RESET}"
+        return
+    fi
+
+    echo -e "${BOLD}Latest backup:${RESET} $(basename "${latest}")"
+    echo "---"
+    cat "${latest}"
+}
+
+cmd_restore() {
+    if [[ ! -d "${BACKUPS_DIR}" ]]; then
+        echo -e "${RED}No backups directory found.${RESET}"
+        return 1
+    fi
+
+    local latest
+    latest=$(find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -n 1)
+
+    if [[ -z "${latest}" ]]; then
+        echo -e "${RED}No backups found.${RESET}"
+        return 1
+    fi
+
+    # Extract task content from backup (everything after "## Current Task" line)
+    local task_content
+    task_content=$(sed -n '/^## Current Task$/,$ { /^## Current Task$/d; p; }' "${latest}")
+
+    if [[ -n "${task_content}" ]]; then
+        echo "${task_content}" > "${TASK_FILE}"
+        echo -e "${GREEN}Restored task from: $(basename "${latest}")${RESET}"
+    else
+        echo -e "${YELLOW}Backup found but no task content to restore.${RESET}"
+    fi
+}
+
+cmd_config() {
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        echo -e "${DIM}No config file found.${RESET}"
+        return
+    fi
+
+    echo -e "${BOLD}Configuration:${RESET}"
+    if command -v jq &>/dev/null; then
+        jq '.' "${CONFIG_FILE}"
+    else
+        cat "${CONFIG_FILE}"
+    fi
+}
+
+cmd_config_set() {
+    local key="${1:-}"
+    local value="${2:-}"
+
+    if [[ -z "${key}" || -z "${value}" ]]; then
+        echo -e "${RED}Usage: ccg config set <key> <value>${RESET}"
+        echo "Available keys: max_backups, language, auto_confirm_after_compact, backup_transcript"
+        return 1
+    fi
+
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        echo -e "${RED}Config file not found. Run install first.${RESET}"
+        return 1
+    fi
+
+    json_write "${CONFIG_FILE}" "${key}" "${value}"
+    echo -e "${GREEN}Set ${key} = ${value}${RESET}"
+}
+
+cmd_help() {
+    echo -e "${BOLD}claude-compact-guard v${VERSION}${RESET}"
+    echo ""
+    echo "Usage: ccg <command> [args]"
+    echo ""
+    echo -e "${BOLD}Commands:${RESET}"
+    echo "  status          Current state: last compaction, task, backups, hooks"
+    echo "  task            Show current task"
+    echo "  task set        Set current task (opens \$EDITOR or reads stdin)"
+    echo "  task clear      Clear current task to template"
+    echo "  backups         List all backups with timestamps"
+    echo "  backups show    Show most recent backup"
+    echo "  restore         Copy latest backup to current-task.md"
+    echo "  config          Show config"
+    echo "  config set K V  Update config value"
+    echo "  help            Show this help"
+    echo "  version         Print version"
+    echo ""
+    echo -e "${DIM}Files: ~/.claude/compact-guard/${RESET}"
+}
+
+cmd_version() {
+    echo "claude-compact-guard v${VERSION}"
+}
+
+# --- Main Router ---
+
+main() {
+    local cmd="${1:-help}"
+    local subcmd="${2:-}"
+
+    case "${cmd}" in
+        status)
+            cmd_status
+            ;;
+        task)
+            case "${subcmd}" in
+                set)    cmd_task_set ;;
+                clear)  cmd_task_clear ;;
+                "")     cmd_task ;;
+                *)      echo -e "${RED}Unknown task subcommand: ${subcmd}${RESET}"; cmd_help; return 1 ;;
+            esac
+            ;;
+        backups)
+            case "${subcmd}" in
+                show)   cmd_backups_show ;;
+                "")     cmd_backups ;;
+                *)      echo -e "${RED}Unknown backups subcommand: ${subcmd}${RESET}"; cmd_help; return 1 ;;
+            esac
+            ;;
+        restore)
+            cmd_restore
+            ;;
+        config)
+            case "${subcmd}" in
+                set)    cmd_config_set "${3:-}" "${4:-}" ;;
+                "")     cmd_config ;;
+                *)      echo -e "${RED}Unknown config subcommand: ${subcmd}${RESET}"; cmd_help; return 1 ;;
+            esac
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        version|--version|-v)
+            cmd_version
+            ;;
+        *)
+            echo -e "${RED}Unknown command: ${cmd}${RESET}"
+            cmd_help
+            return 1
+            ;;
+    esac
+}
+
+main "$@"
