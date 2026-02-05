@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Pre-compact hook: saves context snapshot before Claude Code compaction
-# Triggered automatically by Claude Code before every compaction event
+# Extracts context directly from the conversation transcript (guaranteed)
+# + saves current-task.md if it exists
 
 readonly GUARD_DIR="${HOME}/.claude/compact-guard"
 readonly BACKUPS_DIR="${GUARD_DIR}/backups"
@@ -25,7 +26,6 @@ read_max_backups() {
     local max_backups="${DEFAULT_MAX_BACKUPS}"
 
     if [[ -f "${CONFIG_FILE}" ]]; then
-        # Try jq first, then python3, then grep fallback
         if command -v jq &>/dev/null; then
             max_backups=$(jq -r '.max_backups // 10' "${CONFIG_FILE}" 2>/dev/null) || max_backups="${DEFAULT_MAX_BACKUPS}"
         elif command -v python3 &>/dev/null; then
@@ -51,14 +51,129 @@ read_stdin_json_field() {
     fi
 }
 
-# Atomic write: write to temp file then move
 atomic_write() {
     local target="$1"
     local content="$2"
     local tmp="${target}.tmp.$$"
 
-    echo "${content}" > "${tmp}"
+    printf '%s\n' "${content}" > "${tmp}"
     mv "${tmp}" "${target}"
+}
+
+# Extract context from the transcript JSONL file
+# This is the guaranteed approach — no reliance on Claude writing to a file
+extract_transcript_context() {
+    local transcript_path="$1"
+
+    if [[ ! -f "${transcript_path}" || "${transcript_path}" == "unknown" ]]; then
+        echo "(transcript not available)"
+        return
+    fi
+
+    if command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+
+transcript_path = '${transcript_path}'
+user_messages = []
+files_touched = set()
+tool_actions = []
+
+try:
+    with open(transcript_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = entry.get('type', '')
+
+            # Collect user messages
+            if msg_type == 'human':
+                content = entry.get('message', {}).get('content', '')
+                if isinstance(content, str) and content.strip():
+                    user_messages.append(content.strip()[:200])
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get('type') == 'text':
+                            text = part.get('text', '').strip()
+                            if text:
+                                user_messages.append(text[:200])
+
+            # Collect files from tool uses
+            if msg_type == 'assistant':
+                content = entry.get('message', {}).get('content', [])
+                if isinstance(content, list):
+                    for part in content:
+                        if not isinstance(part, dict):
+                            continue
+                        if part.get('type') == 'tool_use':
+                            tool_input = part.get('input', {})
+                            tool_name = part.get('name', '')
+
+                            # Track files
+                            fp = tool_input.get('file_path', '')
+                            if fp:
+                                files_touched.add(fp)
+
+                            # Track recent actions
+                            if tool_name in ('Edit', 'Write', 'Bash'):
+                                desc = tool_input.get('description', '')
+                                cmd = tool_input.get('command', '')
+                                action = desc or cmd or tool_name
+                                tool_actions.append(f'{tool_name}: {action[:100]}')
+
+except Exception:
+    pass
+
+# Build output
+output_parts = []
+
+# Last 3 user messages (most recent context)
+if user_messages:
+    recent = user_messages[-3:]
+    output_parts.append('### Recent User Messages')
+    for i, msg in enumerate(recent, 1):
+        output_parts.append(f'{i}. {msg}')
+
+# Files touched
+if files_touched:
+    output_parts.append('')
+    output_parts.append('### Files Touched')
+    for fp in sorted(files_touched)[-15:]:
+        output_parts.append(f'- {fp}')
+
+# Last 5 actions
+if tool_actions:
+    output_parts.append('')
+    output_parts.append('### Recent Actions')
+    for action in tool_actions[-5:]:
+        output_parts.append(f'- {action}')
+
+if output_parts:
+    print('\n'.join(output_parts))
+else:
+    print('(no context extracted)')
+" 2>/dev/null || echo "(python3 extraction failed)"
+    elif command -v jq &>/dev/null; then
+        # Simpler jq fallback: just grab last few user messages
+        local messages
+        messages=$(tail -50 "${transcript_path}" 2>/dev/null \
+            | jq -r 'select(.type == "human") | .message.content' 2>/dev/null \
+            | tail -3) || messages=""
+        if [[ -n "${messages}" ]]; then
+            echo "### Recent User Messages"
+            echo "${messages}" | head -c 600
+        else
+            echo "(jq extraction: no messages found)"
+        fi
+    else
+        echo "(no python3 or jq available for transcript extraction)"
+    fi
 }
 
 update_state() {
@@ -109,7 +224,6 @@ rotate_backups() {
 
     if [[ "${backup_count}" -gt "${max_backups}" ]]; then
         local to_delete=$((backup_count - max_backups))
-        # Delete oldest files first (sorted by name = chronological)
         find "${BACKUPS_DIR}" -maxdepth 1 -name "*.md" -type f 2>/dev/null \
             | sort \
             | head -n "${to_delete}" \
@@ -132,19 +246,27 @@ main() {
 
     local session_id="unknown"
     local compact_type="auto"
+    local transcript_path="unknown"
 
     if [[ -n "${stdin_data}" ]]; then
         session_id=$(read_stdin_json_field "session_id" "${stdin_data}")
         compact_type=$(read_stdin_json_field "trigger" "${stdin_data}")
+        transcript_path=$(read_stdin_json_field "transcript_path" "${stdin_data}")
     fi
 
-    # Read current task
-    local task_content="(no task set)"
+    # Read current task (if Claude wrote one)
+    local task_content="(not set by Claude)"
     if [[ -f "${TASK_FILE}" ]]; then
         task_content=$(cat "${TASK_FILE}")
     fi
 
-    # Create timestamped backup
+    # Extract context from transcript (guaranteed, doesn't depend on Claude)
+    local transcript_context="(not available)"
+    if [[ "${transcript_path}" != "unknown" ]]; then
+        transcript_context=$(extract_transcript_context "${transcript_path}")
+    fi
+
+    # Create timestamped backup with both sources
     local timestamp
     timestamp=$(get_timestamp)
     local backup_file="${BACKUPS_DIR}/${timestamp}.md"
@@ -156,8 +278,11 @@ main() {
 - Type: ${compact_type}
 - Session: ${session_id}
 
-## Current Task
+## Current Task (manual)
 ${task_content}
+
+## Extracted Context (auto)
+${transcript_context}
 EOF
 )
 
