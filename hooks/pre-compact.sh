@@ -266,7 +266,11 @@ main() {
         transcript_context=$(extract_transcript_context "${transcript_path}")
     fi
 
-    # Create timestamped backup with both sources
+    # Auto-update current-task.md with concise extracted context
+    # This is what Claude reads after compaction — must stay small
+    auto_update_task_file "${transcript_path}"
+
+    # Create timestamped backup with full details (for human reference only)
     local timestamp
     timestamp=$(get_timestamp)
     local backup_file="${BACKUPS_DIR}/${timestamp}.md"
@@ -278,10 +282,10 @@ main() {
 - Type: ${compact_type}
 - Session: ${session_id}
 
-## Current Task (manual)
+## Current Task
 ${task_content}
 
-## Extracted Context (auto)
+## Extracted Context
 ${transcript_context}
 EOF
 )
