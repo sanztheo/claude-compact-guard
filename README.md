@@ -139,6 +139,9 @@ Manage your rules directly from Claude Code:
 | `/rules-clear` | Clear all session rules |
 | `/rules-save <name>` | Save current rules as a reusable preset |
 | `/rules-load <name>` | Load a preset into the current session |
+| `/rules-doctor` | Run diagnostic checks on installation |
+| `/rules-upgrade` | Check for updates and upgrade |
+| `/rules-status` | Show status dashboard |
 
 ### Auto-Detection
 
@@ -184,7 +187,7 @@ The installer sets up everything automatically:
 |---|---|---|
 | **rules-keeper skill** | `~/.claude/skills/rules-keeper/` | Active layer - reads rules, auto-detects new ones |
 | **CLAUDE.md rules** | `~/.claude/CLAUDE.md` (appended) | Passive layer - rules between guard markers |
-| **Slash commands** | `~/.claude/commands/rules*.md` | 9 commands for managing rules |
+| **Slash commands** | `~/.claude/commands/rules*.md` | 12 commands for managing rules |
 | **PreCompact hook** | `~/.claude/hooks/pre-compact.sh` | Creates backups before compaction |
 | **SessionStart hook** | `~/.claude/hooks/session-start.sh` | Injects rules + context after compaction |
 | **crk CLI** | `~/.local/bin/crk` | Status, backups, restore, config |
