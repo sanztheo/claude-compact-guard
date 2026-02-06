@@ -7,6 +7,7 @@ set -euo pipefail
 readonly GUARD_DIR="${HOME}/.claude/rules-keeper"
 readonly BACKUPS_DIR="${GUARD_DIR}/backups"
 readonly TASK_FILE="${GUARD_DIR}/current-task.md"
+readonly RULES_FILE="${GUARD_DIR}/rules.md"
 
 # --- Helpers ---
 
@@ -52,14 +53,34 @@ main() {
     # Build context to inject
     local context=""
 
+    # Read persistent rules first (most important — these are standing orders)
+    local rules_content=""
+    if [[ -f "${RULES_FILE}" ]]; then
+        rules_content=$(cat "${RULES_FILE}")
+        # Only include if there are actual rules (not just the header)
+        if echo "${rules_content}" | grep -q "^- " 2>/dev/null; then
+            context="[COMPACTION RECOVERY] The conversation was just compacted.
+
+## Your Persistent Rules (MUST follow)
+${rules_content}"
+        fi
+    fi
+
     # Read current-task.md (written by pre-compact hook from transcript)
     if [[ -f "${TASK_FILE}" ]]; then
         local task_content
         task_content=$(cat "${TASK_FILE}")
         if [[ -n "${task_content}" && "${task_content}" != *"(not set)"* ]]; then
-            context="[COMPACTION RECOVERY] The conversation was just compacted. Here is the context from before compaction:
+            if [[ -n "${context}" ]]; then
+                context="${context}
+
+## Task Context Before Compaction
+${task_content}"
+            else
+                context="[COMPACTION RECOVERY] The conversation was just compacted.
 
 ${task_content}"
+            fi
         fi
     fi
 
