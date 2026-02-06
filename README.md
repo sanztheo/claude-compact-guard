@@ -347,7 +347,7 @@ Testing showed that a CLAUDE.md rule alone achieves ~70% compliance - Claude som
 <details>
 <summary><strong>What's the difference between session, global, and project rules?</strong></summary>
 
-**Session rules** (`session-rules.md`) live for the current conversation only — they survive compaction but are cleared when you open a new conversation. **Global rules** (`rules.md`) apply in every conversation forever. **Project rules** (`projects/<name>/rules.md`) apply only when you're in a specific git repo. `/rules` defaults to session scope. Use `/rules-global` for permanent rules.
+**Session rules** (`session-rules.md`) live for the current conversation only — they survive compaction but are cleared when you open a new conversation. **Global rules** (`rules.md`) apply in every conversation forever. **Project rules** (`projects/<name>/rules.md`) apply only when you're in a specific git repo. `/rules-add` defaults to session scope. Use `/rules-add-global` for permanent rules.
 </details>
 
 <details>
