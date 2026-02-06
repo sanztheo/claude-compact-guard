@@ -69,9 +69,9 @@ teardown() {
 
 @test "install creates slash commands" {
     run_install
-    [ -f "${HOME}/.claude/commands/rules.md" ]
-    [ -f "${HOME}/.claude/commands/rules-global.md" ]
-    [ -f "${HOME}/.claude/commands/rules-create.md" ]
+    [ -f "${HOME}/.claude/commands/rules-add.md" ]
+    [ -f "${HOME}/.claude/commands/rules-add-global.md" ]
+    [ -f "${HOME}/.claude/commands/rules-add-smart.md" ]
     [ -f "${HOME}/.claude/commands/rules-doctor.md" ]
     [ -f "${HOME}/.claude/commands/rules-upgrade.md" ]
     [ -f "${HOME}/.claude/commands/rules-status.md" ]

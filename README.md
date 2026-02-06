@@ -130,10 +130,10 @@ Manage your rules directly from Claude Code:
 
 | Command | Description |
 |---|---|
-| `/rules <text>` | Add a session rule (this conversation only, survives compaction) |
-| `/rules-global <text>` | Add a permanent rule (all conversations, forever) |
-| `/rules-create <text>` | Claude reformulates, you validate, then saved to session |
-| `/rules-project <text>` | Add a permanent rule for the current project |
+| `/rules-add <text>` | Add a session rule (this conversation only, survives compaction) |
+| `/rules-add-smart <text>` | Claude reformulates your rule, you validate, then saved |
+| `/rules-add-global <text>` | Add a permanent rule (all conversations, forever) |
+| `/rules-add-project <text>` | Add a permanent rule for the current project |
 | `/rules-show` | Display all active rules (session + global + project) |
 | `/rules-remove` | Remove a specific rule by number |
 | `/rules-clear` | Clear all session rules |
@@ -274,10 +274,10 @@ crk config set max_backups 20
 │   ├── state.json            # Compaction stats
 │   └── config.json           # User preferences
 ├── commands/
-│   ├── rules.md              # /rules (session)
-│   ├── rules-global.md       # /rules-global (permanent)
-│   ├── rules-create.md       # /rules-create (reformulate)
-│   ├── rules-project.md      # /rules-project (per-project)
+│   ├── rules-add.md          # /rules-add (session)
+│   ├── rules-add-smart.md    # /rules-add-smart (reformulate)
+│   ├── rules-add-global.md   # /rules-add-global (permanent)
+│   ├── rules-add-project.md  # /rules-add-project (per-project)
 │   ├── rules-show.md         # /rules-show (display all)
 │   ├── rules-remove.md       # /rules-remove (delete by number)
 │   ├── rules-clear.md        # /rules-clear (clear session)

@@ -167,7 +167,7 @@ remove_skill() {
 # --- Step 4b: Remove slash commands ---
 
 remove_commands() {
-    local cmd_files=("rules.md" "rules-global.md" "rules-create.md" "rules-project.md" "rules-remove.md" "rules-clear.md" "rules-save.md" "rules-load.md" "rules-show.md" "rules-doctor.md" "rules-upgrade.md" "rules-status.md")
+    local cmd_files=("rules-add.md" "rules-add-smart.md" "rules-add-global.md" "rules-add-project.md" "rules-remove.md" "rules-clear.md" "rules-save.md" "rules-load.md" "rules-show.md" "rules-doctor.md" "rules-upgrade.md" "rules-status.md")
     local removed=0
 
     for cmd_file in "${cmd_files[@]}"; do

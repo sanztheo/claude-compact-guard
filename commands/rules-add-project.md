@@ -1,5 +1,5 @@
 ---
-description: Add a project rule (permanent, current project)
+description: Add a permanent rule for the current project only
 argument-hint: <rule for this project>
 ---
 

@@ -36,15 +36,18 @@ Default to **session scope** unless the user explicitly wants it permanent. Conf
 
 | Command | What it does |
 |---------|-------------|
-| `/rules <text>` | Add session rule (this conversation only) |
-| `/rules-global <text>` | Add permanent global rule (all conversations) |
-| `/rules-project <text>` | Add permanent rule for current project |
-| `/rules-create <text>` | Claude reformulates, then adds to session |
+| `/rules-add <text>` | Add session rule (this conversation only) |
+| `/rules-add-smart <text>` | Claude reformulates, you validate, then saved |
+| `/rules-add-global <text>` | Add permanent global rule (all conversations) |
+| `/rules-add-project <text>` | Add permanent rule for current project |
 | `/rules-show` | Show all active rules |
 | `/rules-remove` | Remove a specific rule by number |
 | `/rules-clear` | Clear all session rules |
 | `/rules-save <name>` | Save all rules as reusable preset |
 | `/rules-load <name>` | Load a preset into current session |
+| `/rules-doctor` | Run diagnostic checks |
+| `/rules-upgrade` | Check for updates and upgrade |
+| `/rules-status` | Show status dashboard |
 
 ## Task State
 
