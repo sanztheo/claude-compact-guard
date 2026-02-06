@@ -4,13 +4,16 @@ set -euo pipefail
 # crk - Claude Rules Keeper CLI
 # Manage context backups and task tracking for Claude Code
 
-readonly VERSION="1.0.0"
+readonly VERSION="1.2.0"
 readonly GUARD_DIR="${HOME}/.claude/rules-keeper"
 readonly BACKUPS_DIR="${GUARD_DIR}/backups"
 readonly TASK_FILE="${GUARD_DIR}/current-task.md"
 readonly STATE_FILE="${GUARD_DIR}/state.json"
 readonly CONFIG_FILE="${GUARD_DIR}/config.json"
 readonly HOOKS_DIR="${HOME}/.claude/hooks"
+readonly RULES_FILE="${GUARD_DIR}/rules.md"
+readonly SESSION_RULES_FILE="${GUARD_DIR}/session-rules.md"
+readonly PROJECTS_DIR="${GUARD_DIR}/projects"
 
 # --- Colors ---
 
@@ -363,12 +366,66 @@ cmd_config_set() {
     echo -e "${GREEN}Set ${key} = ${value}${RESET}"
 }
 
+count_rules() {
+    local file="$1"
+    if [[ ! -f "${file}" ]]; then
+        echo "0"
+        return
+    fi
+    local n
+    n=$(grep -c "^- " "${file}" 2>/dev/null) || true
+    echo "${n:-0}"
+}
+
+cmd_rules() {
+    local project_name
+    project_name=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+    local project_rules_file="${PROJECTS_DIR}/${project_name}/rules.md"
+
+    local session_count
+    session_count=$(count_rules "${SESSION_RULES_FILE}")
+    local global_count
+    global_count=$(count_rules "${RULES_FILE}")
+    local project_count
+    project_count=$(count_rules "${project_rules_file}")
+
+    echo -e "${BOLD}Active Rules${RESET}"
+    echo ""
+
+    # Session rules
+    echo -e "${DIM}── Session (${session_count}) ─────────────────────${RESET}"
+    if [[ "${session_count}" -gt 0 ]]; then
+        grep "^- " "${SESSION_RULES_FILE}" 2>/dev/null
+    else
+        echo -e "${DIM}  (none)${RESET}"
+    fi
+    echo ""
+
+    # Global rules
+    echo -e "${DIM}── Global (${global_count}) ──────────────────────${RESET}"
+    if [[ "${global_count}" -gt 0 ]]; then
+        grep "^- " "${RULES_FILE}" 2>/dev/null
+    else
+        echo -e "${DIM}  (none)${RESET}"
+    fi
+    echo ""
+
+    # Project rules
+    echo -e "${DIM}── Project: ${project_name} (${project_count}) ───${RESET}"
+    if [[ "${project_count}" -gt 0 ]]; then
+        grep "^- " "${project_rules_file}" 2>/dev/null
+    else
+        echo -e "${DIM}  (none)${RESET}"
+    fi
+}
+
 cmd_help() {
     echo -e "${BOLD}claude-rules-keeper v${VERSION}${RESET}"
     echo ""
     echo "Usage: crk <command> [args]"
     echo ""
     echo -e "${BOLD}Commands:${RESET}"
+    echo "  rules           Show all active rules (session + global + project)"
     echo "  status          Current state: last compaction, task, backups, hooks"
     echo "  task            Show current task"
     echo "  task set        Set current task (opens \$EDITOR or reads stdin)"
@@ -395,6 +452,9 @@ main() {
     local subcmd="${2:-}"
 
     case "${cmd}" in
+        rules)
+            cmd_rules
+            ;;
         status)
             cmd_status
             ;;
