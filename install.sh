@@ -256,7 +256,7 @@ install_commands() {
         script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     fi
 
-    local cmd_files=("rules.md" "rules-create.md" "rules-project.md" "rules-save.md" "rules-load.md")
+    local cmd_files=("rules.md" "rules-global.md" "rules-create.md" "rules-project.md" "rules-save.md" "rules-load.md" "rules-show.md")
     local installed=0
 
     for cmd_file in "${cmd_files[@]}"; do
@@ -268,7 +268,7 @@ install_commands() {
         fi
     done
 
-    success "${installed} slash commands installed (/rules, /rules-create, /rules-project, /rules-save, /rules-load)"
+    success "${installed} slash commands installed"
 }
 
 # --- Step 5c: Initialize rules.md ---

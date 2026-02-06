@@ -1,33 +1,32 @@
 ---
-description: Add a persistent rule that survives compaction (raw, no reformulation)
-argument-hint: <rule to remember>
+description: Add a session rule (survives compaction, cleared on new conversation)
+argument-hint: <rule for this session>
 ---
 
-You are adding a persistent rule to the user's rules-keeper file. This rule will survive all context compactions.
+You are adding a **session-scoped** rule. This rule survives compaction but is cleared when a new conversation starts.
 
 ## Workflow
 
-1. **Parse the rule** from the user's argument: `$ARGUMENTS`
-2. **Read** `~/.claude/rules-keeper/rules.md` to see existing rules
-3. **Append** the new rule to the file, keeping it clean:
+1. **Parse the rule** from: `$ARGUMENTS`
+2. **Read** `~/.claude/rules-keeper/session-rules.md` to check for duplicates
+3. **Append** the rule:
    - Add a `- ` prefix (markdown list item)
-   - Keep the exact wording the user provided (no reformulation)
-   - Don't duplicate if the same rule already exists
-4. **Confirm** what was added
+   - Keep the exact wording (no reformulation)
+   - Don't duplicate
+4. **Confirm** what was added, mention it's session-scoped
 
-## Format in rules.md
+## Format in session-rules.md
 
 ```markdown
-# Persistent Rules
+# Session Rules
 
-- [rule 1 as written by user]
-- [rule 2 as written by user]
+- [rule 1]
+- [rule 2]
 ```
 
 ## Rules
 
-- NEVER reformulate or "improve" the user's wording - write it EXACTLY as given
-- If the file doesn't exist, create it with the `# Persistent Rules` header
-- If a similar rule already exists, warn the user instead of duplicating
-- Keep rules concise - one line each
-- No verbose confirmation - just show what was added
+- NEVER reformulate - write EXACTLY as given
+- If the file doesn't exist, create it with the `# Session Rules` header
+- Warn if a similar rule already exists
+- Briefly confirm: "Session rule added (cleared on new conversation)."

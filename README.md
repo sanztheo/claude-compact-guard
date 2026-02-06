@@ -66,17 +66,18 @@ That's it. Zero dependencies. Pure bash. Works on **macOS** and **Linux**.
   COMBINED: ~97%+ compliance
 ```
 
-### 3-Scope Rules System
+### 4-Scope Rules System
 
-Your rules are organized in 3 scopes:
+Your rules are organized in 4 scopes:
 
-| Scope | File | When loaded |
+| Scope | File | Lifetime |
 |---|---|---|
-| **Global** | `~/.claude/rules-keeper/rules.md` | Every conversation |
-| **Project** | `~/.claude/rules-keeper/projects/<project>/rules.md` | When working in that project |
+| **Session** | `~/.claude/rules-keeper/session-rules.md` | Current conversation only (cleared on new conv, survives compaction) |
+| **Global** | `~/.claude/rules-keeper/rules.md` | Permanent, all conversations |
+| **Project** | `~/.claude/rules-keeper/projects/<project>/rules.md` | Permanent, when in that project |
 | **Task** | `~/.claude/rules-keeper/current-task.md` | Current session only |
 
-**Global rules** apply everywhere (coding standards, commit format, language preference). **Project rules** apply only when you're working in a specific git repo. **Task state** tracks what you're currently doing and survives compaction.
+**Session rules** live for the current conversation only — they survive compaction but are automatically cleared when you start a new conversation. **Global rules** apply everywhere, forever. **Project rules** apply only in a specific git repo. **Task state** tracks what you're currently doing.
 
 ### The Flow
 
@@ -89,6 +90,7 @@ Your rules are organized in 3 scopes:
   │   loads at conversation     │
   │   start                     │
   │                             │
+  │  ✓ Reads session rules       │
   │  ✓ Reads global rules       │
   │  ✓ Reads project rules      │
   │  ✓ Auto-detects new rules   │
@@ -115,6 +117,7 @@ Your rules are organized in 3 scopes:
   │                             │
   │  ✓ Injects global rules     │
   │  ✓ Injects project rules    │
+  │  ✓ Injects session rules    │
   │  ✓ Injects task context     │
   │    via additionalContext     │
   └─────────────────────────────┘
@@ -126,26 +129,36 @@ Manage your rules directly from Claude Code:
 
 | Command | Description |
 |---|---|
-| `/rules <text>` | Add a rule exactly as written (global scope) |
-| `/rules-create <text>` | Claude reformulates, you validate, then it's saved |
-| `/rules-project <text>` | Add a rule for the current project only |
+| `/rules <text>` | Add a session rule (this conversation only, survives compaction) |
+| `/rules-global <text>` | Add a permanent rule (all conversations, forever) |
+| `/rules-create <text>` | Claude reformulates, you validate, then saved to session |
+| `/rules-project <text>` | Add a permanent rule for the current project |
+| `/rules-show` | Display all active rules (session + global + project) |
 | `/rules-save <name>` | Save current rules as a reusable preset |
 | `/rules-load <name>` | Load a preset into the current session |
 
 ### Auto-Detection
 
-The skill also detects when you state a preference during conversation and saves it automatically:
+The skill also detects when you state a preference during conversation and saves it automatically. By default, preferences are saved to **session scope** unless the user explicitly wants it permanent:
 
-> "toujours utiliser async/await" → saved to global rules
-> "dans ce projet on utilise Zod pour la validation" → saved to project rules
+> "utilise async/await" → saved to **session** rules
+> "toujours utiliser async/await" → saved to **global** rules (keyword "toujours")
+> "dans ce projet on utilise Zod" → saved to **project** rules
 
 ### What gets saved?
 
-**Rules** persist forever (until you remove them):
+**Session rules** last for the current conversation:
+```markdown
+# Session Rules
+
+- Use async/await for this task
+- Keep functions under 20 lines
+```
+
+**Global rules** persist forever:
 ```markdown
 # Persistent Rules
 
-- Always use async/await, never .then()
 - Commits: no AI references, no Co-Authored-By
 - TypeScript: never use any, prefer unknown + narrowing
 ```
@@ -156,7 +169,6 @@ The skill also detects when you state a preference during conversation and saves
 
 Objective: Implement OAuth2 login flow
 Key files: src/auth/oauth.ts, src/middleware/auth.ts
-Decisions made: Using PKCE flow, storing tokens in httpOnly cookies
 Last action: Created token refresh middleware
 Next step: Add logout endpoint and token revocation
 ```
@@ -169,7 +181,7 @@ The installer sets up everything automatically:
 |---|---|---|
 | **rules-keeper skill** | `~/.claude/skills/rules-keeper/` | Active layer - reads rules, auto-detects new ones |
 | **CLAUDE.md rules** | `~/.claude/CLAUDE.md` (appended) | Passive layer - rules between guard markers |
-| **Slash commands** | `~/.claude/commands/rules*.md` | 5 commands for managing rules |
+| **Slash commands** | `~/.claude/commands/rules*.md` | 7 commands for managing rules |
 | **PreCompact hook** | `~/.claude/hooks/pre-compact.sh` | Creates backups before compaction |
 | **SessionStart hook** | `~/.claude/hooks/session-start.sh` | Injects rules + context after compaction |
 | **crk CLI** | `~/.local/bin/crk` | Status, backups, restore, config |
@@ -241,6 +253,7 @@ crk config set max_backups 20
 ~/.claude/
 ├── rules-keeper/
 │   ├── rules.md              # Global persistent rules
+│   ├── session-rules.md      # Session rules (auto-cleared on new conv)
 │   ├── projects/
 │   │   └── my-app/
 │   │       └── rules.md      # Project-specific rules
@@ -251,11 +264,13 @@ crk config set max_backups 20
 │   ├── state.json            # Compaction stats
 │   └── config.json           # User preferences
 ├── commands/
-│   ├── rules.md              # /rules command
-│   ├── rules-create.md       # /rules-create command
-│   ├── rules-project.md      # /rules-project command
-│   ├── rules-save.md         # /rules-save command
-│   └── rules-load.md         # /rules-load command
+│   ├── rules.md              # /rules (session)
+│   ├── rules-global.md       # /rules-global (permanent)
+│   ├── rules-create.md       # /rules-create (reformulate)
+│   ├── rules-project.md      # /rules-project (per-project)
+│   ├── rules-show.md         # /rules-show (display all)
+│   ├── rules-save.md         # /rules-save (preset)
+│   └── rules-load.md         # /rules-load (preset)
 ├── hooks/
 │   ├── pre-compact.sh        # Backup before compaction
 │   └── session-start.sh      # Rules + context injection after compaction
@@ -315,9 +330,9 @@ Testing showed that a CLAUDE.md rule alone achieves ~70% compliance - Claude som
 </details>
 
 <details>
-<summary><strong>What's the difference between global and project rules?</strong></summary>
+<summary><strong>What's the difference between session, global, and project rules?</strong></summary>
 
-**Global rules** (`rules.md`) apply in every conversation - coding standards, commit formats, language preferences. **Project rules** (`projects/<name>/rules.md`) apply only when you're in a specific git repo - project-specific conventions, tech stack choices. The project is auto-detected via `git rev-parse --show-toplevel`.
+**Session rules** (`session-rules.md`) live for the current conversation only — they survive compaction but are cleared when you open a new conversation. **Global rules** (`rules.md`) apply in every conversation forever. **Project rules** (`projects/<name>/rules.md`) apply only when you're in a specific git repo. `/rules` defaults to session scope. Use `/rules-global` for permanent rules.
 </details>
 
 <details>
@@ -329,7 +344,7 @@ Presets let you save a snapshot of your current rules (global + project) and rel
 <details>
 <summary><strong>How does recovery work after compaction?</strong></summary>
 
-The `SessionStart` hook detects compaction via the `"compact"` matcher. It injects global rules, project rules, and task context directly into Claude's context using `additionalContext` - guaranteed injection, not optional file reading.
+The `SessionStart` hook detects compaction via the `"compact"` matcher. It injects global rules, project rules, session rules, and task context directly into Claude's context using `additionalContext` - guaranteed injection, not optional file reading. On new conversations (no compaction), it clears session rules automatically.
 </details>
 
 ## Contributing

@@ -8,6 +8,7 @@ readonly GUARD_DIR="${HOME}/.claude/rules-keeper"
 readonly BACKUPS_DIR="${GUARD_DIR}/backups"
 readonly TASK_FILE="${GUARD_DIR}/current-task.md"
 readonly RULES_FILE="${GUARD_DIR}/rules.md"
+readonly SESSION_RULES_FILE="${GUARD_DIR}/session-rules.md"
 readonly PROJECTS_DIR="${GUARD_DIR}/projects"
 
 # --- Helpers ---
@@ -53,8 +54,11 @@ main() {
         source=$(read_stdin_json_field "source" "${stdin_data}")
     fi
 
-    # Only inject context after compaction
+    # New conversation (not compaction) → clear session rules
     if [[ "${source}" != "compact" ]]; then
+        if [[ -f "${SESSION_RULES_FILE}" ]]; then
+            rm -f "${SESSION_RULES_FILE}"
+        fi
         exit 0
     fi
 
@@ -92,6 +96,25 @@ ${project_rules}"
 
 ## Project Rules: ${project_name} (MUST follow)
 ${project_rules}"
+            fi
+        fi
+    fi
+
+    # Read session rules (survive compaction, cleared on new conversation)
+    if [[ -f "${SESSION_RULES_FILE}" ]]; then
+        local session_rules
+        session_rules=$(cat "${SESSION_RULES_FILE}")
+        if echo "${session_rules}" | grep -q "^- " 2>/dev/null; then
+            if [[ -n "${context}" ]]; then
+                context="${context}
+
+## Session Rules
+${session_rules}"
+            else
+                context="[COMPACTION RECOVERY] The conversation was just compacted.
+
+## Session Rules
+${session_rules}"
             fi
         fi
     fi

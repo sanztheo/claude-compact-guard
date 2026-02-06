@@ -7,38 +7,42 @@ description: Use at the start of every conversation and before every task - main
 
 ## Overview
 
-You have **claude-rules-keeper** installed. Context compaction erases your memory. You maintain persistent rules across 3 scopes:
+You have **claude-rules-keeper** installed. Context compaction erases your memory. You maintain rules across 4 scopes:
 
-| Scope | File | When loaded |
-|-------|------|-------------|
-| **Global** | `~/.claude/rules-keeper/rules.md` | Every conversation |
-| **Project** | `~/.claude/rules-keeper/projects/<project>/rules.md` | When in that project |
+| Scope | File | Lifetime |
+|-------|------|----------|
+| **Session** | `~/.claude/rules-keeper/session-rules.md` | Current conversation only (cleared on new conv) |
+| **Global** | `~/.claude/rules-keeper/rules.md` | Permanent, all conversations |
+| **Project** | `~/.claude/rules-keeper/projects/<project>/rules.md` | Permanent, when in that project |
 | **Task** | `~/.claude/rules-keeper/current-task.md` | Current session only |
 
 ## At Conversation Start
 
-1. **Read global rules:** `~/.claude/rules-keeper/rules.md`
-2. **Read project rules:** Detect project via `git rev-parse --show-toplevel` basename, read `~/.claude/rules-keeper/projects/<project>/rules.md` if it exists
-3. **Follow ALL rules** from both files
+1. **Read session rules:** `~/.claude/rules-keeper/session-rules.md` (if exists)
+2. **Read global rules:** `~/.claude/rules-keeper/rules.md`
+3. **Read project rules:** Detect project via `git rev-parse --show-toplevel` basename, read `~/.claude/rules-keeper/projects/<project>/rules.md` if it exists
+4. **Follow ALL rules** from all files
 
 ## Auto-Detect Rules
 
-When the user states a preference, constraint, or standard that should persist, save it automatically:
-- Permanent preference → append to **global** `rules.md`
+When the user states a preference, constraint, or standard:
+- Session preference → append to **session** `session-rules.md`
+- Permanent preference → append to **global** `rules.md` (only if user says "toujours", "permanently", etc.)
 - Project-specific preference → append to **project** rules file
-- Confirm briefly: "Rule noted in [global/project] rules."
 
-Detection signals: "toujours", "jamais", "je prefere", "utilise X pas Y", "les commits doivent", coding standards, naming conventions.
+Default to **session scope** unless the user explicitly wants it permanent. Confirm briefly: "Rule noted in [session/global/project] rules."
 
 ## User Commands
 
 | Command | What it does |
 |---------|-------------|
-| `/rules <text>` | Add raw rule to global |
-| `/rules-project <text>` | Add raw rule to current project |
-| `/rules-create <text>` | Claude reformulates, then adds |
+| `/rules <text>` | Add session rule (this conversation only) |
+| `/rules-global <text>` | Add permanent global rule (all conversations) |
+| `/rules-project <text>` | Add permanent rule for current project |
+| `/rules-create <text>` | Claude reformulates, then adds to session |
 | `/rules-save <name>` | Save all rules as reusable preset |
 | `/rules-load <name>` | Load a preset into current session |
+| `/rules-show` | Show all active rules |
 
 ## Task State
 
@@ -47,6 +51,6 @@ Write to `~/.claude/rules-keeper/current-task.md` at task start, after decisions
 ## After Compaction
 
 If you see `[COMPACTION RECOVERY]`:
-1. Read global + project rules - these are standing orders
+1. Read global + project + session rules - these are your standing orders
 2. Read recovered task context
 3. Confirm with user before continuing
