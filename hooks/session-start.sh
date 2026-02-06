@@ -160,9 +160,9 @@ ${backup_content}"
                 }
             }'
         elif command -v python3 &>/dev/null; then
-            python3 -c "
-import json
-ctx = '''${context}'''
+            echo "${context}" | python3 -c "
+import sys, json
+ctx = sys.stdin.read()
 print(json.dumps({
     'hookSpecificOutput': {
         'hookEventName': 'SessionStart',

@@ -419,6 +419,35 @@ cmd_rules() {
     fi
 }
 
+cmd_presets() {
+    local presets_dir="${GUARD_DIR}/presets"
+
+    if [[ ! -d "${presets_dir}" ]]; then
+        echo -e "${DIM}No presets directory found.${RESET}"
+        return
+    fi
+
+    local files
+    files=$(find "${presets_dir}" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort)
+
+    if [[ -z "${files}" ]]; then
+        echo -e "${DIM}No presets saved. Use /rules-save <name> to create one.${RESET}"
+        return
+    fi
+
+    echo -e "${BOLD}Saved Presets${RESET}"
+    echo ""
+    while IFS= read -r file; do
+        local name
+        name=$(basename "${file}" .md)
+        local rule_count
+        rule_count=$(grep -c "^- " "${file}" 2>/dev/null) || true
+        local created
+        created=$(grep -m1 "^Created:" "${file}" 2>/dev/null | sed 's/^Created:[[:space:]]*//' ) || created="unknown"
+        echo -e "  ${BOLD}${name}${RESET}  ${DIM}(${rule_count:-0} rules, ${created})${RESET}"
+    done <<< "${files}"
+}
+
 cmd_help() {
     echo -e "${BOLD}claude-rules-keeper v${VERSION}${RESET}"
     echo ""
@@ -426,6 +455,7 @@ cmd_help() {
     echo ""
     echo -e "${BOLD}Commands:${RESET}"
     echo "  rules           Show all active rules (session + global + project)"
+    echo "  presets         List saved rule presets"
     echo "  status          Current state: last compaction, task, backups, hooks"
     echo "  task            Show current task"
     echo "  task set        Set current task (opens \$EDITOR or reads stdin)"
@@ -454,6 +484,9 @@ main() {
     case "${cmd}" in
         rules)
             cmd_rules
+            ;;
+        presets)
+            cmd_presets
             ;;
         status)
             cmd_status

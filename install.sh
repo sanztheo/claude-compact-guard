@@ -168,7 +168,10 @@ merge_settings_jq() {
      then .hooks.PreCompact += [{"hooks": [{"type": "command", "command": "~/.claude/hooks/pre-compact.sh", "timeout": 10000}]}]
      else . end) |
     (if (.hooks.SessionStart | map(select(.hooks[]?.command == "~/.claude/hooks/session-start.sh")) | length) == 0
-     then .hooks.SessionStart += [{"matcher": "compact", "hooks": [{"type": "command", "command": "~/.claude/hooks/session-start.sh", "timeout": 5000}]}]
+     then .hooks.SessionStart += [
+       {"matcher": "compact", "hooks": [{"type": "command", "command": "~/.claude/hooks/session-start.sh", "timeout": 5000}]},
+       {"hooks": [{"type": "command", "command": "~/.claude/hooks/session-start.sh", "timeout": 3000}]}
+     ]
      else . end)
     ' "${SETTINGS_FILE}" > "${tmp}" && mv "${tmp}" "${SETTINGS_FILE}"
 
@@ -203,6 +206,7 @@ ss_exists = any(
 )
 if not ss_exists:
     session_start.append({'matcher': 'compact', 'hooks': [{'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 5000}]})
+    session_start.append({'hooks': [{'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 3000}]})
 
 with open('${tmp}', 'w') as f:
     json.dump(settings, f, indent=2)
@@ -265,7 +269,7 @@ install_commands() {
         script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     fi
 
-    local cmd_files=("rules.md" "rules-global.md" "rules-create.md" "rules-project.md" "rules-save.md" "rules-load.md" "rules-show.md")
+    local cmd_files=("rules.md" "rules-global.md" "rules-create.md" "rules-project.md" "rules-remove.md" "rules-clear.md" "rules-save.md" "rules-load.md" "rules-show.md")
     local installed=0
 
     for cmd_file in "${cmd_files[@]}"; do
