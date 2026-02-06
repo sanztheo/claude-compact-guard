@@ -29,7 +29,7 @@ read_max_backups() {
         if command -v jq &>/dev/null; then
             max_backups=$(jq -r '.max_backups // 10' "${CONFIG_FILE}" 2>/dev/null) || max_backups="${DEFAULT_MAX_BACKUPS}"
         elif command -v python3 &>/dev/null; then
-            max_backups=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}')).get('max_backups', 10))" 2>/dev/null) || max_backups="${DEFAULT_MAX_BACKUPS}"
+            max_backups=$(CRK_FILE="${CONFIG_FILE}" python3 -c "import json, os; print(json.load(open(os.environ['CRK_FILE'])).get('max_backups', 10))" 2>/dev/null) || max_backups="${DEFAULT_MAX_BACKUPS}"
         else
             max_backups=$(grep -o '"max_backups"[[:space:]]*:[[:space:]]*[0-9]*' "${CONFIG_FILE}" 2>/dev/null | grep -o '[0-9]*$') || max_backups="${DEFAULT_MAX_BACKUPS}"
         fi
@@ -45,7 +45,7 @@ read_stdin_json_field() {
     if command -v jq &>/dev/null; then
         echo "${input}" | jq -r ".${field} // \"unknown\"" 2>/dev/null || echo "unknown"
     elif command -v python3 &>/dev/null; then
-        echo "${input}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('${field}','unknown'))" 2>/dev/null || echo "unknown"
+        echo "${input}" | CRK_FIELD="${field}" python3 -c "import sys,json,os; print(json.load(sys.stdin).get(os.environ['CRK_FIELD'],'unknown'))" 2>/dev/null || echo "unknown"
     else
         echo "unknown"
     fi
@@ -71,10 +71,10 @@ extract_transcript_context() {
     fi
 
     if command -v python3 &>/dev/null; then
-        python3 -c "
-import json, sys
+        CRK_TRANSCRIPT="${transcript_path}" python3 -c "
+import json, sys, os
 
-transcript_path = '${transcript_path}'
+transcript_path = os.environ['CRK_TRANSCRIPT']
 user_messages = []
 files_touched = set()
 tool_actions = []
@@ -190,10 +190,10 @@ auto_update_task_file() {
     fi
 
     local concise_task
-    concise_task=$(python3 -c "
-import json
+    concise_task=$(CRK_TRANSCRIPT="${transcript_path}" python3 -c "
+import json, os
 
-transcript_path = '${transcript_path}'
+transcript_path = os.environ['CRK_TRANSCRIPT']
 user_messages = []
 files_touched = set()
 last_actions = []
@@ -280,9 +280,9 @@ update_state() {
             install_date=$(jq -r '.install_date // ""' "${STATE_FILE}" 2>/dev/null) || install_date="${iso_ts}"
             version=$(jq -r '.version // "1.0.0"' "${STATE_FILE}" 2>/dev/null) || version="1.0.0"
         elif command -v python3 &>/dev/null; then
-            total_compactions=$(python3 -c "import json; d=json.load(open('${STATE_FILE}')); print(d.get('total_compactions',0))" 2>/dev/null) || total_compactions=0
-            install_date=$(python3 -c "import json; d=json.load(open('${STATE_FILE}')); print(d.get('install_date',''))" 2>/dev/null) || install_date="${iso_ts}"
-            version=$(python3 -c "import json; d=json.load(open('${STATE_FILE}')); print(d.get('version','1.0.0'))" 2>/dev/null) || version="1.0.0"
+            total_compactions=$(CRK_FILE="${STATE_FILE}" python3 -c "import json,os; print(json.load(open(os.environ['CRK_FILE'])).get('total_compactions',0))" 2>/dev/null) || total_compactions=0
+            install_date=$(CRK_FILE="${STATE_FILE}" python3 -c "import json,os; print(json.load(open(os.environ['CRK_FILE'])).get('install_date',''))" 2>/dev/null) || install_date="${iso_ts}"
+            version=$(CRK_FILE="${STATE_FILE}" python3 -c "import json,os; print(json.load(open(os.environ['CRK_FILE'])).get('version','1.0.0'))" 2>/dev/null) || version="1.0.0"
         fi
     fi
 
@@ -366,7 +366,7 @@ main() {
 
     local backup_content
     backup_content=$(cat <<EOF
-# Compact Guard Backup
+# Rules Keeper Backup
 - Date: $(get_iso_timestamp)
 - Type: ${compact_type}
 - Session: ${session_id}

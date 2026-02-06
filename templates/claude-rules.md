@@ -11,7 +11,7 @@ You have **claude-rules-keeper** installed. Context compaction erases your memor
 3. **Maintain `~/.claude/rules-keeper/current-task.md`** with current task state
 4. **After compaction (`[COMPACTION RECOVERY]`):** Read all rules + recovered context, confirm with user
 
-**Commands:** `/rules` (session), `/rules-global` (permanent), `/rules-create`, `/rules-project`, `/rules-show`, `/rules-save`, `/rules-load`
+**Commands:** `/rules` (session), `/rules-global` (permanent), `/rules-create`, `/rules-project`, `/rules-show`, `/rules-remove`, `/rules-clear`, `/rules-save`, `/rules-load`
 
 This is NON-NEGOTIABLE. If you skip this, rules and work will be lost on compaction.
 <!-- CLAUDE-RULES-KEEPER:END -->

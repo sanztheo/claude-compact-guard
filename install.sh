@@ -39,7 +39,7 @@ atomic_write() {
     local target="$1"
     local content="$2"
     local tmp="${target}.tmp.$$"
-    echo "${content}" > "${tmp}"
+    printf '%s\n' "${content}" > "${tmp}"
     mv "${tmp}" "${target}"
 }
 
@@ -181,10 +181,10 @@ merge_settings_jq() {
 merge_settings_python() {
     local tmp="${SETTINGS_FILE}.tmp.$$"
 
-    python3 -c "
-import json
+    CRK_FILE="${SETTINGS_FILE}" CRK_TMP="${tmp}" python3 -c "
+import json, os
 
-with open('${SETTINGS_FILE}') as f:
+with open(os.environ['CRK_FILE']) as f:
     settings = json.load(f)
 
 hooks = settings.setdefault('hooks', {})
@@ -208,7 +208,7 @@ if not ss_exists:
     session_start.append({'matcher': 'compact', 'hooks': [{'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 5000}]})
     session_start.append({'hooks': [{'type': 'command', 'command': '~/.claude/hooks/session-start.sh', 'timeout': 3000}]})
 
-with open('${tmp}', 'w') as f:
+with open(os.environ['CRK_TMP'], 'w') as f:
     json.dump(settings, f, indent=2)
 " && mv "${tmp}" "${SETTINGS_FILE}"
 

@@ -72,10 +72,10 @@ remove_settings_hooks() {
         success "Hook entries removed from settings.json (jq)"
     elif command -v python3 &>/dev/null; then
         local tmp="${SETTINGS_FILE}.tmp.$$"
-        python3 -c "
-import json
+        CRK_FILE="${SETTINGS_FILE}" CRK_TMP="${tmp}" python3 -c "
+import json, os
 
-with open('${SETTINGS_FILE}') as f:
+with open(os.environ['CRK_FILE']) as f:
     settings = json.load(f)
 
 hooks = settings.get('hooks', {})
@@ -99,7 +99,7 @@ if 'SessionStart' in hooks:
 if not hooks:
     settings.pop('hooks', None)
 
-with open('${tmp}', 'w') as f:
+with open(os.environ['CRK_TMP'], 'w') as f:
     json.dump(settings, f, indent=2)
 " && mv "${tmp}" "${SETTINGS_FILE}"
         success "Hook entries removed from settings.json (python3)"
@@ -126,17 +126,17 @@ remove_claude_rules() {
 
     # Remove everything between markers (inclusive) and any trailing blank line
     if command -v python3 &>/dev/null; then
-        python3 -c "
-import re
+        CRK_FILE="${CLAUDE_MD}" CRK_TMP="${tmp}" python3 -c "
+import re, os
 
-with open('${CLAUDE_MD}') as f:
+with open(os.environ['CRK_FILE']) as f:
     content = f.read()
 
-pattern = r'\n?${GUARD_MARKER_START}.*?${GUARD_MARKER_END}\n?'
+pattern = r'\n?<!-- CLAUDE-RULES-KEEPER:START -->.*?<!-- CLAUDE-RULES-KEEPER:END -->\n?'
 content = re.sub(pattern, '\n', content, flags=re.DOTALL)
 content = content.strip() + '\n'
 
-with open('${tmp}', 'w') as f:
+with open(os.environ['CRK_TMP'], 'w') as f:
     f.write(content)
 " && mv "${tmp}" "${CLAUDE_MD}"
     else
@@ -230,7 +230,7 @@ remove_guard_dir() {
     fi
 
     rm -rf "${GUARD_DIR}"
-    success "Compact guard directory removed"
+    success "Rules keeper directory removed"
 }
 
 # --- Main ---

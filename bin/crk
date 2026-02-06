@@ -40,16 +40,17 @@ json_read() {
     if command -v jq &>/dev/null; then
         value=$(jq -r ".${field} // \"\"" "${file}" 2>/dev/null) || value=""
     elif command -v python3 &>/dev/null; then
-        value=$(python3 -c "
-import json, sys
+        value=$(CRK_FILE="${file}" CRK_FIELD="${field}" python3 -c "
+import json, os
 try:
-    d = json.load(open('${file}'))
-    keys = '${field}'.split('.')
+    with open(os.environ['CRK_FILE']) as f:
+        d = json.load(f)
+    keys = os.environ['CRK_FIELD'].split('.')
     v = d
     for k in keys:
         v = v.get(k, '')
     print(v if v is not None else '')
-except:
+except Exception:
     print('')
 " 2>/dev/null) || value=""
     fi
@@ -73,20 +74,20 @@ json_write() {
         elif [[ "${value}" == "true" || "${value}" == "false" ]]; then
             jq ".${key} = ${value}" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
         else
-            jq ".${key} = \"${value}\"" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
+            jq --arg v "${value}" ".${key} = \$v" "${file}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${file}"
         fi
     elif command -v python3 &>/dev/null; then
-        python3 -c "
-import json
-with open('${file}') as f:
+        CRK_FILE="${file}" CRK_KEY="${key}" CRK_VAL="${value}" CRK_TMP="${tmp}" python3 -c "
+import json, os
+with open(os.environ['CRK_FILE']) as f:
     d = json.load(f)
-val = '${value}'
+val = os.environ['CRK_VAL']
 if val.isdigit():
     val = int(val)
-elif val in ('true','false'):
+elif val in ('true', 'false'):
     val = val == 'true'
-d['${key}'] = val
-with open('${tmp}', 'w') as f:
+d[os.environ['CRK_KEY']] = val
+with open(os.environ['CRK_TMP'], 'w') as f:
     json.dump(d, f, indent=2)
 " 2>/dev/null && mv "${tmp}" "${file}"
     else
@@ -106,12 +107,13 @@ time_ago() {
 
     local epoch=0
     if command -v python3 &>/dev/null; then
-        epoch=$(python3 -c "
+        epoch=$(CRK_TS="${timestamp}" python3 -c "
 from datetime import datetime
+import os
 try:
-    dt = datetime.fromisoformat('${timestamp}')
+    dt = datetime.fromisoformat(os.environ['CRK_TS'])
     print(int(dt.timestamp()))
-except:
+except Exception:
     print(0)
 " 2>/dev/null) || epoch=0
     elif date --version &>/dev/null 2>&1; then
@@ -223,7 +225,7 @@ cmd_task_set() {
         echo -e "${GREEN}Task updated from stdin.${RESET}"
     elif [[ -n "${EDITOR:-}" ]]; then
         if [[ ! -f "${TASK_FILE}" ]]; then
-            cp "${GUARD_DIR}/../../rules-keeper/templates/current-task.md" "${TASK_FILE}" 2>/dev/null || cat > "${TASK_FILE}" <<'TMPL'
+            cat > "${TASK_FILE}" <<'TMPL'
 # Current Task
 
 Objective: (not set)
@@ -443,7 +445,8 @@ cmd_presets() {
         local rule_count
         rule_count=$(grep -c "^- " "${file}" 2>/dev/null) || true
         local created
-        created=$(grep -m1 "^Created:" "${file}" 2>/dev/null | sed 's/^Created:[[:space:]]*//' ) || created="unknown"
+        created=$(grep -m1 "^Created:" "${file}" 2>/dev/null | sed 's/^Created:[[:space:]]*//')
+        created="${created:-unknown}"
         echo -e "  ${BOLD}${name}${RESET}  ${DIM}(${rule_count:-0} rules, ${created})${RESET}"
     done <<< "${files}"
 }

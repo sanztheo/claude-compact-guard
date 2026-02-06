@@ -40,9 +40,11 @@ Default to **session scope** unless the user explicitly wants it permanent. Conf
 | `/rules-global <text>` | Add permanent global rule (all conversations) |
 | `/rules-project <text>` | Add permanent rule for current project |
 | `/rules-create <text>` | Claude reformulates, then adds to session |
+| `/rules-show` | Show all active rules |
+| `/rules-remove` | Remove a specific rule by number |
+| `/rules-clear` | Clear all session rules |
 | `/rules-save <name>` | Save all rules as reusable preset |
 | `/rules-load <name>` | Load a preset into current session |
-| `/rules-show` | Show all active rules |
 
 ## Task State
 

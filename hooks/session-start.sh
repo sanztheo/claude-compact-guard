@@ -20,7 +20,7 @@ read_stdin_json_field() {
     if command -v jq &>/dev/null; then
         echo "${input}" | jq -r ".${field} // \"\"" 2>/dev/null || echo ""
     elif command -v python3 &>/dev/null; then
-        echo "${input}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('${field}',''))" 2>/dev/null || echo ""
+        echo "${input}" | CRK_FIELD="${field}" python3 -c "import sys,json,os; print(json.load(sys.stdin).get(os.environ['CRK_FIELD'],''))" 2>/dev/null || echo ""
     else
         echo ""
     fi
@@ -40,10 +40,50 @@ detect_project_name() {
     echo "${project_name}"
 }
 
+# --- Context Builder ---
+
+# Appends a section to the context string, adding the recovery header if first section
+append_context() {
+    local header="$1"
+    local body="$2"
+
+    if [[ -z "${context}" ]]; then
+        context="[COMPACTION RECOVERY] The conversation was just compacted."
+    fi
+    context="${context}
+
+${header}
+${body}"
+}
+
+# Outputs the final context as JSON (or plain text fallback)
+output_context_json() {
+    if command -v jq &>/dev/null; then
+        jq -n --arg ctx "${context}" '{
+            hookSpecificOutput: {
+                hookEventName: "SessionStart",
+                additionalContext: $ctx
+            }
+        }'
+    elif command -v python3 &>/dev/null; then
+        echo "${context}" | python3 -c "
+import sys, json
+ctx = sys.stdin.read()
+print(json.dumps({
+    'hookSpecificOutput': {
+        'hookEventName': 'SessionStart',
+        'additionalContext': ctx
+    }
+}))
+"
+    else
+        echo "${context}"
+    fi
+}
+
 # --- Main ---
 
 main() {
-    # Read stdin JSON from Claude Code
     local stdin_data=""
     if [[ ! -t 0 ]]; then
         stdin_data=$(cat)
@@ -65,20 +105,16 @@ main() {
     # Build context to inject
     local context=""
 
-    # Read global persistent rules (most important — standing orders)
-    local rules_content=""
+    # Global persistent rules
     if [[ -f "${RULES_FILE}" ]]; then
+        local rules_content
         rules_content=$(cat "${RULES_FILE}")
-        # Only include if there are actual rules (not just the header)
         if echo "${rules_content}" | grep -q "^- " 2>/dev/null; then
-            context="[COMPACTION RECOVERY] The conversation was just compacted.
-
-## Your Persistent Rules (MUST follow)
-${rules_content}"
+            append_context "## Your Persistent Rules (MUST follow)" "${rules_content}"
         fi
     fi
 
-    # Read project-specific rules
+    # Project-specific rules
     local project_name
     project_name=$(detect_project_name)
     local project_rules_file="${PROJECTS_DIR}/${project_name}/rules.md"
@@ -86,58 +122,29 @@ ${rules_content}"
         local project_rules
         project_rules=$(cat "${project_rules_file}")
         if echo "${project_rules}" | grep -q "^- " 2>/dev/null; then
-            if [[ -n "${context}" ]]; then
-                context="${context}
-
-## Project Rules: ${project_name} (MUST follow)
-${project_rules}"
-            else
-                context="[COMPACTION RECOVERY] The conversation was just compacted.
-
-## Project Rules: ${project_name} (MUST follow)
-${project_rules}"
-            fi
+            append_context "## Project Rules: ${project_name} (MUST follow)" "${project_rules}"
         fi
     fi
 
-    # Read session rules (survive compaction, cleared on new conversation)
+    # Session rules (survive compaction, cleared on new conversation)
     if [[ -f "${SESSION_RULES_FILE}" ]]; then
         local session_rules
         session_rules=$(cat "${SESSION_RULES_FILE}")
         if echo "${session_rules}" | grep -q "^- " 2>/dev/null; then
-            if [[ -n "${context}" ]]; then
-                context="${context}
-
-## Session Rules
-${session_rules}"
-            else
-                context="[COMPACTION RECOVERY] The conversation was just compacted.
-
-## Session Rules
-${session_rules}"
-            fi
+            append_context "## Session Rules" "${session_rules}"
         fi
     fi
 
-    # Read current-task.md (written by pre-compact hook from transcript)
+    # Task context (written by pre-compact hook from transcript)
     if [[ -f "${TASK_FILE}" ]]; then
         local task_content
         task_content=$(cat "${TASK_FILE}")
         if [[ -n "${task_content}" && "${task_content}" != *"(not set)"* ]]; then
-            if [[ -n "${context}" ]]; then
-                context="${context}
-
-## Task Context Before Compaction
-${task_content}"
-            else
-                context="[COMPACTION RECOVERY] The conversation was just compacted.
-
-${task_content}"
-            fi
+            append_context "## Task Context Before Compaction" "${task_content}"
         fi
     fi
 
-    # If no task file, try the latest backup
+    # Fallback: latest backup if nothing else was found
     if [[ -z "${context}" ]]; then
         local latest_backup
         latest_backup=$(get_latest_backup)
@@ -150,30 +157,9 @@ ${backup_content}"
         fi
     fi
 
-    # If we have context, output JSON with additionalContext
+    # Output JSON with additionalContext
     if [[ -n "${context}" ]]; then
-        if command -v jq &>/dev/null; then
-            jq -n --arg ctx "${context}" '{
-                hookSpecificOutput: {
-                    hookEventName: "SessionStart",
-                    additionalContext: $ctx
-                }
-            }'
-        elif command -v python3 &>/dev/null; then
-            echo "${context}" | python3 -c "
-import sys, json
-ctx = sys.stdin.read()
-print(json.dumps({
-    'hookSpecificOutput': {
-        'hookEventName': 'SessionStart',
-        'additionalContext': ctx
-    }
-}))
-"
-        else
-            # Plain text fallback — stdout is also added as context for SessionStart
-            echo "${context}"
-        fi
+        output_context_json
     fi
 }
 
